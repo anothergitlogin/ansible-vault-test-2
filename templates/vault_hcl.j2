@@ -1,0 +1,40 @@
+listener "tcp" {
+  address          = "0.0.0.0:{{ vault_port }}"
+  cluster_address  = "0.0.0.0:{{ vault_cluster_port }}"
+  tls_key_file     = "{{ vault_privkey }}"
+  tls_cert_file    = "{{ vault_certfile }}"
+}
+
+api_addr = "https://{{ ansible_fqdn }}:{{ vault_port }}"
+cluster_addr = "https://{{ ansible_fqdn }}:{{ vault_cluster_port }}"
+
+
+seal "awskms" {
+  region     = "{{ vault_region }}"
+  kms_key_id = "{{ kms_key }}"
+}
+disable_mlock = true
+storage "raft" {
+  path = "{{ vault_raft_path }}"
+  node_id = "raft_{{ ansible_facts['nodename'] }}"
+  # performance_multiplier = "{{ vault_raft_performance_multiplier }}"
+  # snapshot_threshold = "{{ vault_raft_snapshot_threshold }}"
+  # autopilot_reconcile_interval = "{{ vault_raft_autopilot_reconcile_interval }}"
+  # 
+
+
+  {% if not (vault_tls_disable | bool) %}
+  retry_join {
+    leader_api_addr = "{{ hostvars[server]['vault_api_addr'] | default(vault_protocol + '://' + hostvars[server]['ansible_' + vault_iface]['ipv4']['address'] + ':' + (vault_port|string)) }}"
+    leader_ca_cert_file = "{{ vault_backend_tls_config_path }}/{{ vault_backend_tls_ca_file }}"
+    leader_client_cert_file = "{{ vault_backend_tls_config_path }}/{{ vault_backend_tls_cert_file }}"
+    leader_client_key_file = "{{ vault_backend_tls_config_path }}/{{ vault_backend_tls_key_file }}"
+  }
+  {% else %}
+  retry_join {
+  {% if cloud_env == "aws" -%}
+    auto_join = "provider=aws tag_key={{ vault_join_tag_key }} tag_value={{ vault_join_tag_value }} region={{ vault_region }} addr_type=private_v4"
+    auto_join_scheme = "https"
+  {% endif -%}
+  }
+ui = true
